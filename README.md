@@ -13,6 +13,91 @@
 - Python 3.8+
 - (선택) LLM 생성을 사용하려면 macOS Apple Silicon(M1/M2/M3) 등에서 Ollama 설치 및 모델 준비
 
+## 운영체제별 실행 환경
+아래는 Python과 Ollama(선택)의 설치 및 확인 방법입니다.
+
+### Ubuntu (Linux)
+- Python 설치(권장):
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+```
+- Ollama 설치(선택, LLM 사용 시):
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+# 서비스 확인
+ollama --version && ollama list
+```
+- 모델 준비(예):
+```bash
+ollama pull qwen2.5:7b-instruct-q5_K_M
+# 동작 확인
+ollama run qwen2.5:7b-instruct-q5_K_M "hello"
+```
+- 실행:
+```bash
+python3 scripts/generate_prompts.py --skip-base --llm \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
+  --variants 5 --append
+```
+
+### macOS (Apple Silicon 포함)
+- Python: 기본 내장되지만 최신 버전을 권장합니다(Homebrew 예시).
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install python@3
+```
+- Ollama(선택):
+```bash
+brew install ollama
+ollama --version && ollama list
+```
+- 모델 준비(예):
+```bash
+ollama pull llama3.1:8b-instruct-q5_K_M
+ollama pull qwen2.5:7b-instruct-q5_K_M
+```
+- 실행(멀티라인 예시):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file output/positive.txt \
+  --variants 3 \
+  --append
+```
+
+### Windows 11/10
+- Python 설치: https://www.python.org/downloads/ 에서 설치(또는 Microsoft Store).
+  - PowerShell에서 버전 확인: `python --version` 또는 `py -3 --version`
+- Ollama(선택): Windows용 설치 프로그램 사용(https://ollama.com/). 설치 후 PowerShell에서:
+```powershell
+ollama --version; ollama list
+ollama pull qwen2.5:7b-instruct-q5_K_M
+```
+- 실행:
+  - 한 줄 실행(권장):
+```powershell
+python scripts/generate_prompts.py --skip-base --llm --model "qwen2.5:7b-instruct-q5_K_M" --variants 3 --append
+```
+  - PowerShell 멀티라인은 백틱(`) 사용:
+```powershell
+python scripts/generate_prompts.py `
+  --skip-base --llm `
+  --model "qwen2.5:7b-instruct-q5_K_M" `
+  --variants 3 `
+  --append
+```
+  - CMD.exe에서는 캐럿(^) 사용:
+```cmd
+python scripts\generate_prompts.py ^
+  --skip-base --llm ^
+  --model "qwen2.5:7b-instruct-q5_K_M" ^
+  --variants 3 ^
+  --append
+```
+
 ## 빠른 시작
 ```bash
 # 기본 긍정/부정 프롬프트 파일 생성
@@ -167,6 +252,38 @@ scripts/
 - Qwen(non-instruct) 모델은 `generate` 모드에서 빈 응답이 나올 수 있어 ChatML 폴백을 자동 시도합니다. 필요 시 `--llm-mode chat` 또는 `--no-qwen-chatml-fallback`를 사용하세요.
 - 중복 줄이 생기면 간단히 정리할 수 있습니다:
   - `awk '!seen[$0]++' output/positive.txt > output/positive.tmp && mv output/positive.tmp output/positive.txt`
+
+## Git 사용 예시
+`.gitignore`에는 `tmp/`와 모든 `*.txt`가 포함되어 있어 생성물은 기본적으로 커밋 대상이 아닙니다.
+
+```bash
+# 최초 초기화(처음 한 번)
+git init
+
+# 변경 사항 확인
+git status
+
+# 전체 스테이징(생성된 .txt는 무시 규칙으로 제외됨)
+git add -A
+
+# 커밋
+git commit -m "Add prompt generator, README, .gitignore"
+
+# 선택: 원격 저장소 연결 및 푸시
+git branch -M main
+git remote add origin <YOUR_REPO_URL>
+git push -u origin main
+```
+
+특정 `.txt` 파일을 강제로 추적하고 싶다면(무시 규칙을 일시 우회):
+
+```bash
+# 무시 규칙을 무시하고 강제로 추가
+git add -f output/positive.txt output/negative.txt
+git commit -m "Track generated prompt files"
+```
+
+또는 `.gitignore`에서 `*.txt`를 지우고, 필요한 경우 보존할 텍스트 파일만 선택적으로 제외/포함하도록 조정하세요.
 
 ## 라이선스
 내부/연구용으로 자유롭게 사용하세요. 별도 라이선스가 필요하다면 알려주세요.
