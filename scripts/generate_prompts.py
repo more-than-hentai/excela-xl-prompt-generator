@@ -422,6 +422,7 @@ def main() -> None:
     parser.add_argument("--debug-llm", action="store_true", help="Print raw and normalized LLM outputs")
     parser.add_argument("--no-qwen-chatml-fallback", action="store_true", help="Disable ChatML fallback for Qwen models in generate mode")
     parser.add_argument("--system-prompt", default=None, help="Override system prompt used for chat/ChatML modes")
+    parser.add_argument("--system-prompt-file", default=None, help="Read system prompt from file (overrides --system-prompt)")
     parser.add_argument(
         "--no-safe-adult-tags",
         dest="safe_adult_tags",
@@ -458,6 +459,15 @@ def main() -> None:
 
     # LLM 기반 유사 프롬프트 생성 (옵션)
     if args.llm:
+        # Resolve system prompt from file or flag
+        system_prompt_val = args.system_prompt
+        if args.system_prompt_file:
+            try:
+                system_prompt_val = Path(args.system_prompt_file).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                print(f"[WARN] System prompt file not found: {args.system_prompt_file}", file=sys.stderr)
+            except Exception as e:
+                print(f"[WARN] Failed to read system prompt file: {e}", file=sys.stderr)
         # Prepare exclusion set
         excluded: Set[str] = set()
         def add_excluded_from_text(text: str):
@@ -503,7 +513,7 @@ def main() -> None:
                         mode=args.llm_mode,
                         debug=bool(args.debug_llm),
                         qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
-                        system_prompt_override=args.system_prompt,
+                        system_prompt_override=system_prompt_val,
                         excluded_norm=excluded,
                         exclude_mode=args.exclude_mode,
                         retries=int(args.retries),
@@ -537,7 +547,7 @@ def main() -> None:
                     mode=args.llm_mode,
                     debug=bool(args.debug_llm),
                     qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
-                    system_prompt_override=args.system_prompt,
+                    system_prompt_override=system_prompt_val,
                     excluded_norm=excluded,
                     exclude_mode=args.exclude_mode,
                     retries=int(args.retries),

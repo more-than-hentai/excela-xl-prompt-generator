@@ -193,6 +193,7 @@ python3 scripts/generate_prompts.py \
 --fsync                     각 라인 쓰기 후 fsync(안전, 느림)
 --progress-every <N>        N라인마다 진행률 출력(0=끄기)
 --system-prompt <TEXT>      chat/ChatML에서 사용할 시스템 프롬프트
+--system-prompt-file <FILE> 파일에서 시스템 프롬프트 읽기(텍스트보다 우선)
 --no-qwen-chatml-fallback   Qwen용 ChatML 폴백 비활성화
 --exclude <TOKENS>          제외 토큰(콤마 구분), 반복 지정 가능
 --exclude-file <FILE>       제외 토큰 파일(라인 또는 콤마 구분)
@@ -239,6 +240,19 @@ python3 scripts/generate_prompts.py \
 ```
 토큰 매칭은 대소문자 무시, 괄호/가중치 제거 뒤 비교합니다. 예) `((hat))`도 `hat`과 일치로 간주합니다.
 
+### 시스템 프롬프트를 파일로 지정
+긴 시스템 프롬프트는 파일로 관리하는 것이 편리합니다. `--system-prompt-file`이 지정되면 `--system-prompt`보다 우선합니다.
+
+```bash
+# 예: system_prompt.txt 파일을 사용
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --system-prompt-file system_prompt.txt \
+  --variants 20 --incremental --progress-every 10 --append
+```
+
 ## 대량 생성/중간 저장
 - 장시간 작업 시 `--incremental`로 한 줄씩 즉시 저장하면 중간에 멈춰도 결과가 남습니다.
 - 안전성을 높이려면 `--fsync`를 추가하세요(속도 저하).
@@ -282,37 +296,6 @@ scripts/
 - 중복 줄이 생기면 간단히 정리할 수 있습니다:
   - `awk '!seen[$0]++' output/positive.txt > output/positive.tmp && mv output/positive.tmp output/positive.txt`
 
-## Git 사용 예시
-`.gitignore`에는 `tmp/`와 모든 `*.txt`가 포함되어 있어 생성물은 기본적으로 커밋 대상이 아닙니다.
-
-```bash
-# 최초 초기화(처음 한 번)
-git init
-
-# 변경 사항 확인
-git status
-
-# 전체 스테이징(생성된 .txt는 무시 규칙으로 제외됨)
-git add -A
-
-# 커밋
-git commit -m "Add prompt generator, README, .gitignore"
-
-# 선택: 원격 저장소 연결 및 푸시
-git branch -M main
-git remote add origin <YOUR_REPO_URL>
-git push -u origin main
-```
-
-특정 `.txt` 파일을 강제로 추적하고 싶다면(무시 규칙을 일시 우회):
-
-```bash
-# 무시 규칙을 무시하고 강제로 추가
-git add -f output/positive.txt output/negative.txt
-git commit -m "Track generated prompt files"
-```
-
-또는 `.gitignore`에서 `*.txt`를 지우고, 필요한 경우 보존할 텍스트 파일만 선택적으로 제외/포함하도록 조정하세요.
 
 ## 라이선스
 내부/연구용으로 자유롭게 사용하세요. 별도 라이선스가 필요하다면 알려주세요.
