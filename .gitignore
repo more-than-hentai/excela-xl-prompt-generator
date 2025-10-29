@@ -1,0 +1,13 @@
+# Ignore temporary directories/files
+tmp/
+**/tmp/
+*.tmp
+*.temp
+
+# Ignore all text files (generated prompts, etc.)
+*.txt
+
+# Optional: common local files (safe to keep)
+.DS_Store
+__pycache__/
+*.py[cod]
