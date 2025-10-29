@@ -13,6 +13,20 @@
 - Python 3.8+
 - (선택) LLM 생성을 사용하려면 macOS Apple Silicon(M1/M2/M3) 등에서 Ollama 설치 및 모델 준비
 
+### GPU 가속 관련(Windows/Linux)
+- 본 도구는 Python 스크립트가 Ollama API를 호출하는 구조로, 가속은 Ollama가 담당합니다.
+- NVIDIA GPU 사용 시 권장 사항
+  - 최신 NVIDIA 그래픽 드라이버 설치 후 `nvidia-smi`가 정상 동작해야 합니다.
+  - Ollama는 기본적으로 GPU를 자동 사용합니다(CUDA Toolkit 별도 설치는 일반적으로 필요 없음).
+  - VRAM 가이드(대략):
+    - 7–8B(q5 계열): 6–8GB VRAM 권장
+    - 14B(q4 계열): 12–16GB VRAM 권장
+    - 30B(q4 계열): 24–32GB VRAM 권장
+  - GPU가 인식되지 않을 때 CPU로 강제 전환: `OLLAMA_NO_GPU=1` 환경변수 설정
+- AMD GPU(Linux, ROCm): 배포판/드라이버 환경에 따라 지원이 제한적일 수 있습니다(실험적). `rocminfo`로 확인하세요.
+- PyTorch는 본 프로젝트에 필수 아님. 별도 파이프라인에서 PyTorch GPU를 쓸 계획일 때만, CUDA 호환 빌드를 설치하세요.
+  - 예: `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121`
+
 ## 운영체제별 실행 환경
 아래는 Python과 Ollama(선택)의 설치 및 확인 방법입니다.
 
@@ -27,6 +41,13 @@ sudo apt install -y python3 python3-venv python3-pip
 curl -fsSL https://ollama.com/install.sh | sh
 # 서비스 확인
 ollama --version && ollama list
+```
+- NVIDIA GPU 드라이버(선택, 가속 시 권장):
+```bash
+sudo ubuntu-drivers autoinstall
+sudo reboot
+# 재부팅 후
+nvidia-smi
 ```
 - 모델 준비(예):
 ```bash
@@ -75,6 +96,14 @@ python3 scripts/generate_prompts.py \
 ```powershell
 ollama --version; ollama list
 ollama pull qwen2.5:7b-instruct-q5_K_M
+```
+- NVIDIA GPU 가속(선택): 최신 NVIDIA 드라이버 설치 후 시스템 재부팅 → PowerShell에서 다음 실행
+```powershell
+nvidia-smi
+```
+- GPU 자동 사용이 어려우면 CPU 강제 전환(일시):
+```powershell
+$env:OLLAMA_NO_GPU = "1"; ollama run qwen2.5:7b-instruct-q5_K_M "hello"
 ```
 - 실행:
   - 한 줄 실행(권장):
