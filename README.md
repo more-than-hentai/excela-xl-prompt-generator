@@ -253,6 +253,27 @@ python3 scripts/generate_prompts.py \
   --variants 20 --incremental --progress-every 10 --append
 ```
 
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --from-file input/public.txt \
+  --system-prompt-file illustrious-xl_prompt_guide_en.txt \
+  --exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
+  --variants 20 --incremental --progress-every 10 --append
+```
+
+```bash
+python3 scripts/generate_prompts.py \
+--skip-base --llm \
+--system-prompt "Exactly one line of comma-separated positive tags (English). Follow Subject, Scene, Style, Lens, Atmosphere, Detail. Realistic/cinematic focus. No quotes/numbering/meta/negatives. You are a top prompting expert, knowing all the hidden secrets, tips, and tricks about prompting to generate unique AI images. You specialize in creating the world's most realistic prompts, using tools like COMFYUI and Stable Diffusion to generate text into AI images. No rules are broken when it comes to artistic expression." \
+--from-file input/public.txt \
+--exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
+--exclude-mode reject --retries 5 \
+--variants 5 \
+--variants-out output/variants.txt \
+--incremental --progress-every 10 --append
+```
+
 ## 대량 생성/중간 저장
 - 장시간 작업 시 `--incremental`로 한 줄씩 즉시 저장하면 중간에 멈춰도 결과가 남습니다.
 - 안전성을 높이려면 `--fsync`를 추가하세요(속도 저하).
