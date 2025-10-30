@@ -194,7 +194,13 @@ python3 scripts/generate_prompts.py \
 --progress-every <N>        N라인마다 진행률 출력(0=끄기)
 --system-prompt <TEXT>      chat/ChatML에서 사용할 시스템 프롬프트
 --system-prompt-file <FILE> 파일에서 시스템 프롬프트 읽기(텍스트보다 우선)
+--system-prompt-preset <NAME>
+                             내장 프리셋 사용(텍스트/파일 미지정 시 적용)
 --no-qwen-chatml-fallback   Qwen용 ChatML 폴백 비활성화
+--qwen-image                 Qwen-Image 공식 가이드라인 기반 프롬프트 생성
+--qwen-style <sentence|structured|tags>
+                             출력 형식 선택(기본: sentence)
+--qwen-out <FILE>            Qwen-Image 결과를 별도 파일에 기록
 --exclude <TOKENS>          제외 토큰(콤마 구분), 반복 지정 가능
 --exclude-file <FILE>       제외 토큰 파일(라인 또는 콤마 구분)
 --exclude-mode <drop|reject>제외 방식: drop=토큰만 제거, reject=라인 폐기
@@ -252,6 +258,77 @@ python3 scripts/generate_prompts.py \
   --system-prompt-file system_prompt.txt \
   --variants 20 --incremental --progress-every 10 --append
 ```
+
+### 시스템 프롬프트 프리셋
+파일/텍스트 대신 내장 프리셋을 사용할 수 있습니다. 현재 지원: `illustrious-xl`.
+
+```bash
+# Illustrious-XL 프리셋(태그형 변형 생성)
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --system-prompt-preset illustrious-xl \
+  --variants 10 --variants-out output/variants.txt --append
+
+# Illustrious-XL 프리셋(Qwen-Image 모드)
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --qwen-style sentence \
+  --system-prompt-preset illustrious-xl \
+  --variants 5 --qwen-out output/qwen_image_prompts.txt --append
+```
+우선순위: `--system-prompt-file` > `--system-prompt` > `--system-prompt-preset` > 내장 기본값
+
+## Qwen-Image 프롬프트 생성 모드
+`--qwen-image`를 사용하면 시드 토큰(`--seed` / `--from-file`)을 바탕으로 Qwen-Image 가이드라인에 맞춘 프롬프트를 생성합니다.
+
+- 스타일 선택(`--qwen-style`):
+  - `sentence`: 1줄 내 1–3개 영어 문장으로 간결히 기술(기본)
+  - `structured`: 라벨 포함(Subject; Scene; Style; Lens; Atmosphere; Detail) 1줄 출력
+  - `tags`: 템플릿 순서의 콤마 구분 조각으로 1줄 출력
+
+예시(문장형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
+  --qwen-style sentence \
+  --variants 5 \
+  --qwen-out output/qwen_image_prompts.txt \
+  --incremental --progress-every 1 --append
+```
+
+예시(라벨형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --qwen-style structured \
+  --variants 3 \
+  --qwen-out output/qwen_structured.txt \
+  --append
+```
+
+예시(태그형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --qwen-style tags \
+  --variants 3 \
+  --qwen-out output/qwen_tags.txt \
+  --append
+```
+
+팁
+- `--system-prompt` 또는 `--system-prompt-file`로 시스템 규칙을 강화하면 포맷 준수율이 올라갑니다.
+- `--exclude`는 태그형(tags) 출력에 가장 잘 맞습니다. 문장/라벨형은 사후 토큰 제거가 어려우므로 필요 시 시스템 프롬프트로 금지 규칙을 추가하세요.
 
 ```bash
 python3 scripts/generate_prompts.py \

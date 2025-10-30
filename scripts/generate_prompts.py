@@ -279,6 +279,141 @@ def build_qwen_chatml(system: str, user: str) -> str:
     )
 
 
+def system_prompt_from_preset(preset: str, for_qwen_image: bool, style: str | None = None) -> str:
+    name = (preset or "").lower()
+    if name == "illustrious-xl":
+        if for_qwen_image:
+            return (
+                "You are an expert prompt engineer for Qwen-Image and photo-realistic generation. "
+                "Output exactly ONE line in English. Follow professional, realistic and cinematic tone. "
+                "Avoid meta text and negatives; no quotes unless exact text is required. Focus on camera, lens, and lighting terminology. "
+                "Treat 'girl'/'1girl' as adult woman."
+            )
+        # variants/tag mode preset
+        return (
+            "You generate a single-line, comma-separated list of POSITIVE tags for photo-realistic, cinematic images. "
+            "Output exactly one line, no quotes, no numbering, no extra text. Follow the order Subject, Scene, Style, Lens, Atmosphere, Detail. "
+            "Emphasize realism (camera, lens, lighting). Do not include any negatives or meta. Treat 'girl'/'1girl' as adult woman."
+        )
+    # Fallback generic if unknown
+    return (
+        "Output exactly one line as instructed. English only. No quotes, no numbering, no extra text."
+    )
+
+
+def build_qwen_image_instruction(seed: str, style: str) -> tuple[str, str]:
+    """Return (system, user) messages for Qwen-Image guideline-based prompts.
+
+    style: 'sentence' | 'structured' | 'tags'
+    - sentence: 1 line, 1–3 concise English sentences.
+    - structured: 1 line with labeled segments (Subject; Scene; Style; Lens; Atmosphere; Detail).
+    - tags: 1 line, comma-separated segments following the template order.
+    """
+    system = (
+        "You are an expert prompt engineer for Qwen-Image, Stable Diffusion, and ComfyUI. "
+        "Output must be in English and strictly formatted as requested. Avoid meta text, "
+        "avoid negatives, avoid quotes unless explicitly requested, and produce exactly one line."
+    )
+    base_user = (
+        "Follow Qwen-Image prompt guideline: Subject + Scene + Define Style + Lens Language + "
+        "Atmosphere Words + Detail Modifiers. Use the provided tokens as hints. Be concise and clear.\n\n"
+        f"Tokens: {seed}\n"
+    )
+    if style == "structured":
+        user = (
+            base_user
+            + "Output exactly ONE line with labeled sections using semicolons in this order: "
+              "Subject: ..., Scene: ..., Style: ..., Lens: ..., Atmosphere: ..., Detail: ... . "
+              "No extra commentary, no quotes."
+        )
+    elif style == "tags":
+        user = (
+            base_user
+            + "Output exactly ONE line as a comma-separated list of short fragments following the order: "
+              "Subject, Scene, Style, Lens, Atmosphere, Detail. No quotes, no numbering."
+        )
+    else:  # sentence
+        user = (
+            base_user
+            + "Write exactly ONE line consisting of 1–3 concise sentences that describe the image "
+              "in order: Subject, Scene, Style, Lens, Atmosphere, Detail."
+        )
+    return system, user
+
+
+def generate_qwen_image_prompts(
+    seeds: Sequence[str],
+    host: str,
+    model: str,
+    variants_per_seed: int,
+    temperature: float,
+    style: str,
+    mode: str,
+    debug: bool,
+    qwen_chatml_fallback: bool,
+    system_prompt_override: str | None,
+    safe_adult_tags: bool,
+) -> List[str]:
+    results: List[str] = []
+    for line in iter_qwen_image_prompts(
+        seeds=seeds,
+        host=host,
+        model=model,
+        variants_per_seed=variants_per_seed,
+        temperature=temperature,
+        style=style,
+        mode=mode,
+        debug=debug,
+        qwen_chatml_fallback=qwen_chatml_fallback,
+        system_prompt_override=system_prompt_override,
+        safe_adult_tags=safe_adult_tags,
+    ):
+        results.append(line)
+    return results
+
+
+def iter_qwen_image_prompts(
+    seeds: Sequence[str],
+    host: str,
+    model: str,
+    variants_per_seed: int,
+    temperature: float,
+    style: str,
+    mode: str,
+    debug: bool,
+    qwen_chatml_fallback: bool,
+    system_prompt_override: str | None,
+    safe_adult_tags: bool,
+):
+    """Yield one guideline-based Qwen-Image prompt per variant."""
+    for seed in seeds:
+        clean_seed = sanitize_seed(seed, safe_adult_tags=safe_adult_tags)
+        for _ in range(variants_per_seed):
+            system_msg, user_msg = build_qwen_image_instruction(clean_seed, style)
+            if system_prompt_override is not None:
+                system_msg = system_prompt_override
+            if mode == "chat":
+                raw = ollama_chat(
+                    host=host,
+                    model=model,
+                    system=system_msg,
+                    user=user_msg,
+                    temperature=temperature,
+                )
+            else:
+                # Prefer chat; but for generate, try plain then ChatML fallback if Qwen.
+                prompt = user_msg
+                raw = ollama_generate(host=host, model=model, prompt=prompt, temperature=temperature)
+                if (not raw) and qwen_chatml_fallback and ("qwen" in model.lower()) and ("instruct" not in model.lower()):
+                    chatml = build_qwen_chatml(system_msg, user_msg)
+                    raw = ollama_generate(host=host, model=model, prompt=chatml, temperature=temperature)
+            line = normalize_prompt_line(raw)
+            if debug:
+                print(f"[LLM raw] {raw!r}\n[LLM norm] {line!r}")
+            if line:
+                yield line
+
+
 def generate_variants_with_ollama(
     seeds: Sequence[str],
     host: str,
@@ -329,9 +464,8 @@ def iter_variants_with_ollama(
     exclude_mode: str = "drop",
     retries: int = 3,
 ):
-    """Yield one normalized variant string at a time (skips blanks),
-    honoring exclusion rules and retries if configured.
-    """
+    # Yield one normalized variant string at a time (skips blanks), honoring
+    # exclusion rules and retries if configured.
     excluded_norm = excluded_norm or set()
 
     for seed in seeds:
@@ -424,6 +558,12 @@ def main() -> None:
     parser.add_argument("--system-prompt", default=None, help="Override system prompt used for chat/ChatML modes")
     parser.add_argument("--system-prompt-file", default=None, help="Read system prompt from file (overrides --system-prompt)")
     parser.add_argument(
+        "--system-prompt-preset",
+        choices=["illustrious-xl"],
+        default=None,
+        help="Use a built-in system prompt preset (used if no file/text provided)",
+    )
+    parser.add_argument(
         "--no-safe-adult-tags",
         dest="safe_adult_tags",
         action="store_false",
@@ -441,6 +581,10 @@ def main() -> None:
     parser.add_argument("--exclude-file", default=None, help="File with tokens to exclude (one per line or comma-separated)")
     parser.add_argument("--exclude-mode", choices=["drop", "reject"], default="drop", help="drop: remove tokens; reject: discard lines containing them")
     parser.add_argument("--retries", type=int, default=3, help="Retries per variant when exclude-mode=reject")
+    # Qwen-Image prompt mode
+    parser.add_argument("--qwen-image", action="store_true", help="Generate Qwen-Image prompts following the official guideline")
+    parser.add_argument("--qwen-style", choices=["sentence", "structured", "tags"], default="sentence", help="Qwen-Image output style: one-line sentence(s), labeled structured, or tag list")
+    parser.add_argument("--qwen-out", default=None, help="Write Qwen-Image prompts to a separate file path")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -468,6 +612,13 @@ def main() -> None:
                 print(f"[WARN] System prompt file not found: {args.system_prompt_file}", file=sys.stderr)
             except Exception as e:
                 print(f"[WARN] Failed to read system prompt file: {e}", file=sys.stderr)
+        # If still None and preset specified, derive from preset
+        if system_prompt_val is None and args.system_prompt_preset:
+            system_prompt_val = system_prompt_from_preset(
+                args.system_prompt_preset,
+                for_qwen_image=bool(args.qwen_image),
+                style=getattr(args, "qwen_style", None),
+            )
         # Prepare exclusion set
         excluded: Set[str] = set()
         def add_excluded_from_text(text: str):
@@ -495,7 +646,11 @@ def main() -> None:
         else:
             seeds = SAMPLE_POSITIVES[:]
 
-        target_path = Path(args.variants_out) if args.variants_out else positive_path
+        # Decide output target depending on mode
+        if args.qwen_image:
+            target_path = Path(args.qwen_out or args.variants_out or (out_dir / "qwen_image_prompts.txt"))
+        else:
+            target_path = Path(args.variants_out) if args.variants_out else positive_path
         variants_per_seed = max(1, int(args.variants))
 
         if args.incremental:
@@ -503,7 +658,81 @@ def main() -> None:
             appended = 0
             try:
                 with target_path.open("a", encoding="utf-8") as out:
-                    for line in iter_variants_with_ollama(
+                    if args.qwen_image:
+                        for line in iter_qwen_image_prompts(
+                            seeds=seeds,
+                            host=args.llm_host,
+                            model=args.model,
+                            variants_per_seed=variants_per_seed,
+                            temperature=float(args.temperature),
+                            style=args.qwen_style,
+                            mode=args.llm_mode,
+                            debug=bool(args.debug_llm),
+                            qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
+                            system_prompt_override=system_prompt_val,
+                            safe_adult_tags=bool(args.safe_adult_tags),
+                        ):
+                            out.write(line + "\n")
+                            out.flush()
+                            if args.fsync:
+                                try:
+                                    os.fsync(out.fileno())
+                                except OSError:
+                                    pass
+                            appended += 1
+                            if args.progress_every and (appended % args.progress_every == 0):
+                                print(f"[LLM] Appended {appended}/{total_planned} lines -> {target_path}")
+                    else:
+                        for line in iter_variants_with_ollama(
+                            seeds=seeds,
+                            host=args.llm_host,
+                            model=args.model,
+                            variants_per_seed=variants_per_seed,
+                            temperature=float(args.temperature),
+                            safe_adult_tags=bool(args.safe_adult_tags),
+                            mode=args.llm_mode,
+                            debug=bool(args.debug_llm),
+                            qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
+                            system_prompt_override=system_prompt_val,
+                            excluded_norm=excluded,
+                            exclude_mode=args.exclude_mode,
+                            retries=int(args.retries),
+                        ):
+                            out.write(line + "\n")
+                            out.flush()
+                            if args.fsync:
+                                try:
+                                    os.fsync(out.fileno())
+                                except OSError:
+                                    pass
+                            appended += 1
+                            if args.progress_every and (appended % args.progress_every == 0):
+                                print(f"[LLM] Appended {appended}/{total_planned} lines -> {target_path}")
+            except KeyboardInterrupt:
+                print(f"\n[LLM] Interrupted. Appended {appended}/{total_planned} lines to {target_path}")
+                return
+            except Exception as e:
+                print(f"[LLM] Generation failed after {appended} lines: {e}", file=sys.stderr)
+                sys.exit(2)
+            print(f"[LLM] Completed. Appended {appended}/{total_planned} lines to {target_path}")
+        else:
+            try:
+                if args.qwen_image:
+                    prompts = generate_qwen_image_prompts(
+                        seeds=seeds,
+                        host=args.llm_host,
+                        model=args.model,
+                        variants_per_seed=variants_per_seed,
+                        temperature=float(args.temperature),
+                        style=args.qwen_style,
+                        mode=args.llm_mode,
+                        debug=bool(args.debug_llm),
+                        qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
+                        system_prompt_override=system_prompt_val,
+                        safe_adult_tags=bool(args.safe_adult_tags),
+                    )
+                else:
+                    prompts = generate_variants_with_ollama(
                         seeds=seeds,
                         host=args.llm_host,
                         model=args.model,
@@ -517,47 +746,13 @@ def main() -> None:
                         excluded_norm=excluded,
                         exclude_mode=args.exclude_mode,
                         retries=int(args.retries),
-                    ):
-                        out.write(line + "\n")
-                        out.flush()
-                        if args.fsync:
-                            try:
-                                os.fsync(out.fileno())
-                            except OSError:
-                                pass
-                        appended += 1
-                        if args.progress_every and (appended % args.progress_every == 0):
-                            print(f"[LLM] Appended {appended}/{total_planned} lines -> {target_path}")
-            except KeyboardInterrupt:
-                print(f"\n[LLM] Interrupted. Appended {appended}/{total_planned} lines to {target_path}")
-                return
-            except Exception as e:
-                print(f"[LLM] Generation failed after {appended} lines: {e}", file=sys.stderr)
-                sys.exit(2)
-            print(f"[LLM] Completed. Appended {appended}/{total_planned} lines to {target_path}")
-        else:
-            try:
-                variants = generate_variants_with_ollama(
-                    seeds=seeds,
-                    host=args.llm_host,
-                    model=args.model,
-                    variants_per_seed=variants_per_seed,
-                    temperature=float(args.temperature),
-                    safe_adult_tags=bool(args.safe_adult_tags),
-                    mode=args.llm_mode,
-                    debug=bool(args.debug_llm),
-                    qwen_chatml_fallback=not bool(args.no_qwen_chatml_fallback),
-                    system_prompt_override=system_prompt_val,
-                    excluded_norm=excluded,
-                    exclude_mode=args.exclude_mode,
-                    retries=int(args.retries),
-                )
+                    )
             except Exception as e:
                 print(f"[LLM] Generation failed: {e}", file=sys.stderr)
                 sys.exit(2)
 
-            write_lines(target_path, variants, append=True)
-            print(f"[LLM] Appended {len(variants)} variant line(s) to {target_path}")
+            write_lines(target_path, prompts, append=True)
+            print(f"[LLM] Appended {len(prompts)} line(s) to {target_path}")
 
 
 if __name__ == "__main__":
