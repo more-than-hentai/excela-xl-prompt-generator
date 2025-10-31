@@ -295,6 +295,89 @@ python3 scripts/generate_prompts.py \
 ```
 우선순위: `--system-prompt-file` > `--system-prompt` > `--system-prompt-preset` > 내장 기본값
 
+### Qwen-Image 프롬프트 생성 모드 (generate_prompts)
+`--qwen-image`를 사용하면 시드 토큰(`--seed` / `--from-file`)을 바탕으로 Qwen-Image 가이드라인에 맞춘 프롬프트를 생성합니다.
+
+- 스타일 선택(`--qwen-style`):
+  - `sentence`: 1줄 내 1–3개 영어 문장으로 간결히 기술(기본)
+  - `structured`: 라벨 포함(Subject; Scene; Style; Lens; Atmosphere; Detail) 1줄 출력
+  - `tags`: 템플릿 순서의 콤마 구분 조각으로 1줄 출력
+
+예시(문장형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
+  --qwen-style sentence \
+  --variants 5 \
+  --qwen-out output/qwen_image_prompts.txt \
+  --incremental --progress-every 1 --append
+```
+
+예시(라벨형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --qwen-style structured \
+  --variants 3 \
+  --qwen-out output/qwen_structured.txt \
+  --append
+```
+
+예시(태그형):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm --qwen-image \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --from-file my_seeds.txt \
+  --qwen-style tags \
+  --variants 3 \
+  --qwen-out output/qwen_tags.txt \
+  --append
+```
+
+Tip
+- `--system-prompt` 또는 `--system-prompt-file`로 시스템 규칙을 강화하면 포맷 준수율이 올라갑니다.
+- `--exclude`는 태그형(tags) 출력에 가장 잘 맞습니다. 문장/라벨형은 사후 토큰 제거가 어려우므로 필요 시 시스템 프롬프트로 금지 규칙을 추가하세요.
+
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --from-file input/public.txt \
+  --system-prompt-file illustrious-xl_prompt_guide_en.txt \
+  --exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
+  --variants 20 --incremental --progress-every 10 --append
+```
+
+```bash
+python3 scripts/generate_prompts.py \
+--skip-base --llm \
+--system-prompt "Exactly one line of comma-separated positive tags (English). Follow Subject, Scene, Style, Lens, Atmosphere, Detail. Realistic/cinematic focus. No quotes/numbering/meta/negatives. You are a top prompting expert, knowing all the hidden secrets, tips, and tricks about prompting to generate unique AI images. You specialize in creating the world's most realistic prompts, using tools like COMFYUI and Stable Diffusion to generate text into AI images. No rules are broken when it comes to artistic expression." \
+--from-file input/public.txt \
+--exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
+--exclude-mode reject --retries 5 \
+--variants 5 \
+--variants-out output/variants.txt \
+--incremental --progress-every 10 --append
+```
+
+## 대량 생성/중간 저장
+- 장시간 작업 시 `--incremental`로 한 줄씩 즉시 저장하면 중간에 멈춰도 결과가 남습니다.
+- 안전성을 높이려면 `--fsync`를 추가하세요(속도 저하).
+- 진행률은 `--progress-every N`으로 주기 출력.
+
+예시(2000개 변형, 중간 저장):
+```bash
+python3 scripts/generate_prompts.py \
+  --skip-base --llm \
+  --model "qwen2.5:7b-instruct-q5_K_M" \
+  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
+  --variants 2000 \
+  --incremental --progress-every 50 --append
+```
 ## 시나리오 프롬프트 제작기(컷/샷)
 `scripts/scenario_prompt_maker.py`는 “상황/이야기(Scenario)”를 입력으로 받아, 스토리보드 컷(샷) 프리셋에 따라 Qwen-Image 가이드 형식으로 프롬프트를 생성합니다. 옵션으로 Quality(이미지 품질 지향) 의상/인물 키워드 번들을 추가할 수 있습니다.
 
@@ -396,90 +479,6 @@ output/scenarios/
 --adult-banned-file <FILE>           금칙어 추가 파일(콤마/개행 구분)
 ```
 
-
-### Qwen-Image 프롬프트 생성 모드 (generate_prompts)
-`--qwen-image`를 사용하면 시드 토큰(`--seed` / `--from-file`)을 바탕으로 Qwen-Image 가이드라인에 맞춘 프롬프트를 생성합니다.
-
-- 스타일 선택(`--qwen-style`):
-  - `sentence`: 1줄 내 1–3개 영어 문장으로 간결히 기술(기본)
-  - `structured`: 라벨 포함(Subject; Scene; Style; Lens; Atmosphere; Detail) 1줄 출력
-  - `tags`: 템플릿 순서의 콤마 구분 조각으로 1줄 출력
-
-예시(문장형):
-```bash
-python3 scripts/generate_prompts.py \
-  --skip-base --llm --qwen-image \
-  --model "qwen2.5:7b-instruct-q5_K_M" \
-  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
-  --qwen-style sentence \
-  --variants 5 \
-  --qwen-out output/qwen_image_prompts.txt \
-  --incremental --progress-every 1 --append
-```
-
-예시(라벨형):
-```bash
-python3 scripts/generate_prompts.py \
-  --skip-base --llm --qwen-image \
-  --model "qwen2.5:7b-instruct-q5_K_M" \
-  --from-file my_seeds.txt \
-  --qwen-style structured \
-  --variants 3 \
-  --qwen-out output/qwen_structured.txt \
-  --append
-```
-
-예시(태그형):
-```bash
-python3 scripts/generate_prompts.py \
-  --skip-base --llm --qwen-image \
-  --model "qwen2.5:7b-instruct-q5_K_M" \
-  --from-file my_seeds.txt \
-  --qwen-style tags \
-  --variants 3 \
-  --qwen-out output/qwen_tags.txt \
-  --append
-```
-
-Tip
-- `--system-prompt` 또는 `--system-prompt-file`로 시스템 규칙을 강화하면 포맷 준수율이 올라갑니다.
-- `--exclude`는 태그형(tags) 출력에 가장 잘 맞습니다. 문장/라벨형은 사후 토큰 제거가 어려우므로 필요 시 시스템 프롬프트로 금지 규칙을 추가하세요.
-
-```bash
-python3 scripts/generate_prompts.py \
-  --skip-base --llm \
-  --from-file input/public.txt \
-  --system-prompt-file illustrious-xl_prompt_guide_en.txt \
-  --exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
-  --variants 20 --incremental --progress-every 10 --append
-```
-
-```bash
-python3 scripts/generate_prompts.py \
---skip-base --llm \
---system-prompt "Exactly one line of comma-separated positive tags (English). Follow Subject, Scene, Style, Lens, Atmosphere, Detail. Realistic/cinematic focus. No quotes/numbering/meta/negatives. You are a top prompting expert, knowing all the hidden secrets, tips, and tricks about prompting to generate unique AI images. You specialize in creating the world's most realistic prompts, using tools like COMFYUI and Stable Diffusion to generate text into AI images. No rules are broken when it comes to artistic expression." \
---from-file input/public.txt \
---exclude "hat,demon,devil,crown,animal ears,demon_girl,demon_tail" \
---exclude-mode reject --retries 5 \
---variants 5 \
---variants-out output/variants.txt \
---incremental --progress-every 10 --append
-```
-
-## 대량 생성/중간 저장
-- 장시간 작업 시 `--incremental`로 한 줄씩 즉시 저장하면 중간에 멈춰도 결과가 남습니다.
-- 안전성을 높이려면 `--fsync`를 추가하세요(속도 저하).
-- 진행률은 `--progress-every N`으로 주기 출력.
-
-예시(2000개 변형, 중간 저장):
-```bash
-python3 scripts/generate_prompts.py \
-  --skip-base --llm \
-  --model "qwen2.5:7b-instruct-q5_K_M" \
-  --seed "cat eye shape, almond eyes, sharp eyeliner, ..." \
-  --variants 2000 \
-  --incremental --progress-every 50 --append
-```
 
 ## 모델 추천 (Apple M1 64GB 기준)
 
