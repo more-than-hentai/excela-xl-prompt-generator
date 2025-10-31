@@ -49,10 +49,10 @@ SAMPLE_POSITIVES: list[str] = [
     (
         "cat eye shape, almond eyes, sharp eyeliner, foxy look, sharp jawline, "
         "elegant beauty, pale skin, glossy lips, eyelashes, (black eyes), long hair, "
-        "(sexually_suggestive), looking at viewer, av_idol, k-illustration, "
-        "(short torso, narrow_waist,naturally sagging breasts), , 1girl, ((sheer pantyhose)), "
+        "(sexually_suggestive), looking at viewer, k-illustration, "
+        "(short torso, narrow_waist,naturally sagging breasts), 1girl,"
         "micro tight skirt, breasts, solo, korean text, brown hair, long hair, jacket, bag, "
-        "animal ears, cleavage, shirt, white shirt, black micro tight skirt, belt, handbag, "
+        "cleavage, shirt, white shirt, black micro tight skirt, belt, handbag, "
         "pencil micro tight skirt, white background, fur trim, brown eyes, trembling, "
         "black jacket, simple background, blush, long sleeves, miniskirt, black legwear, "
         "large breasts, off shoulder, eyebrows visible through hair, brown legwear, "
@@ -61,7 +61,7 @@ SAMPLE_POSITIVES: list[str] = [
 ]
 
 SAMPLE_NEGATIVES: list[str] = [
-    "(worst quality, low quality), (koam, 2d, anime, drawing, drawn face, cartoon, manga, cg, 3d, rendered), blush, ((hat)), closed eyes, pussy juice"
+    "(worst quality, low quality), (koam, 2d, anime, drawing, drawn face, cartoon, manga, cg, 3d, rendered), blush, ((hat)), closed eyes"
 ]
 
 

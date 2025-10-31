@@ -2,16 +2,27 @@
 
 이 저장소는 이미지 생성 모델용 프롬프트를 정리·확장하기 위한 간단한 Python 도구를 제공합니다. 기본 긍정/부정 프롬프트 파일을 생성하고, 원하면 로컬 LLM(Ollama)을 통해 유사한 긍정 프롬프트를 추가 생성할 수 있습니다.
 
-## 주요 기능
+## 도구별 주요 기능
+
+### generate_prompts
 - 디렉토리/파일 스캐폴딩: `output/positive.txt`, `output/negative.txt` 생성
-- 긍정 프롬프트: 와일드카드용으로 라인당 1개 프롬프트 저장
-- 부정 프롬프트: 기본 샘플 1라인 저장(원하면 파일로 관리 가능)
-- LLM 통합(옵션): 로컬 Ollama 서버로 유사 프롬프트 변형 생성 및 추가
-- 안전 기본값: 모호한 연령 표현(`1girl`, `girl`)을 성인 표현(`1woman`, `woman`)으로 치환(옵션으로 해제 가능)
+- 긍정 프롬프트: 라인당 1개 프롬프트 저장(와일드카드 친화)
+- LLM 통합: Ollama로 유사 긍정 프롬프트 변형 생성(variants)
+- Qwen-Image 모드: 가이드 템플릿(sentence/structured/tags) 출력 지원
+- 안전 기본값: 모호한 연령 표현을 성인 표현으로 치환(옵션 해제 가능)
+- 제어: 제외 토큰(drop/reject), 시스템 프롬프트 파일/프리셋, ChatML 폴백 등
+
+### scenario_prompt_maker
+- 시나리오 입력 → 컷(샷) 프리셋별 프롬프트 생성
+- Quality 번들(의상/인물) 및 사용자 정의 토큰 추가
+- 토픽 기반 시나리오 자동 생성(`--auto-scenario`)
+- 시퀀스 모드: 컷 수/길이에 맞는 샷리스트 자동 설계(`--sequence-auto`)
+- 안전한 폴더명: 슬러그 길이 제한 + 해시 접미사
+- 산출물 인덱스: `INDEX.txt`에 시나리오/설정/파일 목록 기록
 
 ## 요구 사항
 - Python 3.8+
-- (선택) LLM 생성을 사용하려면 macOS Apple Silicon(M1/M2/M3) 등에서 Ollama 설치 및 모델 준비
+- LLM 생성을 사용하려면 Ollama 설치 및 모델 준비
 
 ### GPU 가속 관련(Windows/Linux)
 - 본 도구는 Python 스크립트가 Ollama API를 호출하는 구조로, 가속은 Ollama가 담당합니다.
@@ -24,8 +35,6 @@
     - 30B(q4 계열): 24–32GB VRAM 권장
   - GPU가 인식되지 않을 때 CPU로 강제 전환: `OLLAMA_NO_GPU=1` 환경변수 설정
 - AMD GPU(Linux, ROCm): 배포판/드라이버 환경에 따라 지원이 제한적일 수 있습니다(실험적). `rocminfo`로 확인하세요.
-- PyTorch는 본 프로젝트에 필수 아님. 별도 파이프라인에서 PyTorch GPU를 쓸 계획일 때만, CUDA 호환 빌드를 설치하세요.
-  - 예: `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121`
 
 ## 운영체제별 실행 환경
 아래는 Python과 Ollama(선택)의 설치 및 확인 방법입니다.
@@ -127,6 +136,8 @@ python scripts\generate_prompts.py ^
   --append
 ```
 
+## generate_prompts 사용법
+
 ## 빠른 시작
 ```bash
 # 기본 긍정/부정 프롬프트 파일 생성
@@ -174,7 +185,7 @@ python3 scripts/generate_prompts.py \
 
 기본 LLM 호스트는 `http://localhost:11434` 이며, Ollama가 백그라운드에서 실행 중이어야 합니다.
 
-## CLI 옵션 요약
+### CLI 옵션 요약 (generate_prompts)
 ```text
 --out-dir <PATH>            출력 디렉토리 (기본: output)
 --append                    기존 파일에 이어쓰기
@@ -207,6 +218,8 @@ python3 scripts/generate_prompts.py \
 --retries <N>               reject 모드에서 각 라인 재시도 횟수(기본 3)
 --no-safe-adult-tags        모호한 연령 표현 치환 비활성화
 ```
+
+ 
 
 ## 기존 텍스트 파일로부터 생성
 - 보유 중인 텍스트 파일(라인당 1개 시드 프롬프트)을 그대로 입력으로 사용할 수 있습니다.
@@ -282,7 +295,141 @@ python3 scripts/generate_prompts.py \
 ```
 우선순위: `--system-prompt-file` > `--system-prompt` > `--system-prompt-preset` > 내장 기본값
 
-## Qwen-Image 프롬프트 생성 모드
+## 시나리오 프롬프트 제작기(컷/샷)
+`scripts/scenario_prompt_maker.py`는 “상황/이야기(Scenario)”를 입력으로 받아, 스토리보드 컷(샷) 프리셋에 따라 Qwen-Image 가이드 형식으로 프롬프트를 생성합니다. 옵션으로 Quality(이미지 품질 지향) 의상/인물 키워드 번들을 추가할 수 있습니다.
+
+- 시나리오 기반: `--scenario` 또는 `--scenario-file`
+- 컷 프리셋: `--preset storyboard`(기본) – Establishing, Wide, Medium, Close-up, Over-Shoulder, Detail
+- 스타일: `--style sentence|structured|tags` (Qwen-Image 가이드)
+- 번들(선택): `--bundle quality-outfit`, `--bundle quality-character` (추가 토큰은 `--extra-bundle`)
+ - 번들(선택): `--bundle quality-outfit`, `--bundle quality-character`, `--bundle nsfw-soft`, `--bundle nsfw-boudoir` (추가 토큰은 `--extra-bundle`)
+- 시스템 프롬프트: 기본값으로 `QWEN Image Creation Prompt Engineer Guide.txt`를 사용
+- 결과: `output/scenarios/<slug>/<NN>_<shot>.txt` 파일들로 저장
+
+### 시퀀스 모드(10초 영상 컷 플래닝)
+- 컷 수 지정: `--num-cuts 3`(최소) ~ `--num-cuts 10`(권장)
+- 길이 목표: `--duration-sec 10`(기본)
+- 자동 샷리스트 생성: `--sequence-auto` 사용 시, 시나리오/토픽을 바탕으로 일관된 시퀀스(연속성, 카메라 움직임, 앵글)를 LLM이 설계하고, 컷별 프롬프트를 생성합니다.
+- 토픽으로 시나리오도 함께 자동 생성하려면 `--topic ... --auto-scenario`를 병행하세요.
+
+예시(영문 시나리오 자동 생성 + 5컷 시퀀스 + 태그형 출력):
+```bash
+python3 scripts/scenario_prompt_maker.py \
+  --topic "proposal in a fancy restaurant" --topic "rainstorm" \
+  --auto-scenario --story-language en --story-sentences 3 \
+  --sequence-auto --num-cuts 5 --duration-sec 10 \
+  --style tags --variants 1
+```
+
+예시(태그형, 번들 2종, 컷별 3변형):
+```bash
+python3 scripts/scenario_prompt_maker.py \
+  --scenario "Rainy neon alley; a poised woman exits a jazz bar" \
+  --bundle quality-outfit --bundle quality-character \
+  --style tags --variants 3 \
+  --model "qwen2.5:7b-instruct-q5_K_M"
+```
+
+예시(라벨형, 시스템 프롬프트 기본값 사용):
+```bash
+python3 scripts/scenario_prompt_maker.py \
+  --scenario "Dawn on a foggy harbor, minimal elegance" \
+  --style structured --variants 2
+```
+
+출력 구조 예시:
+```text
+output/scenarios/
+  rainy-neon-alley-a-poised-woman-exits-a-jazz-bar/
+    01_establishing.txt
+    02_wide.txt
+    03_medium.txt
+    04_closeup.txt
+    05_over_shoulder.txt
+    06_detail.txt
+    INDEX.txt
+```
+
+팁
+- 시나리오는 한국어여도 무방하나, 시스템 규칙상 출력은 영어로 1줄 형식을 엄격히 따릅니다.
+- `--extra-bundle "comma, separated, tokens"`로 자유 키워드를 추가할 수 있습니다.
+
+### CLI 옵션 요약 (scenario_prompt_maker)
+```text
+--scenario <TEXT>                    시나리오(짧은 문장). 파일 입력은 --scenario-file
+--scenario-file <FILE>               시나리오 텍스트 파일
+--topic <TEXT>                       토픽/키워드(반복 지정). 파일 입력은 --topic-file
+--topic-file <FILE>                  토픽 파일(콤마/개행 구분)
+--auto-scenario                      토픽 기반 시나리오 자동 생성 활성화
+--story-sentences <N>                자동 시나리오 문장 수(기본 2)
+--story-language <en|ko>             자동 시나리오 언어(기본 ko)
+--story-style <logline|vignette>     자동 시나리오 스타일(기본 logline)
+
+--preset <NAME>                      컷 프리셋(기본 storyboard)
+--num-cuts <N>                       컷 수 지정(예: 3–10)
+--duration-sec <N>                   전체 길이 목표(초, 기본 10)
+--sequence-auto                      시나리오로부터 샷리스트 자동 설계
+
+--bundle <quality-outfit|quality-character|nsfw-soft|nsfw-boudoir>
+                                     품질/NSFW(비노골적) 번들(반복 가능)
+--extra-bundle <TOKENS>              추가 토큰(콤마 구분, 반복 가능)
+
+--style <sentence|structured|tags>   Qwen-Image 출력 형식(기본 sentence)
+--variants <N>                       컷별 변형 개수(기본 3)
+--temperature <F>                    샘플링 온도(기본 0.7)
+--model <NAME>                       Ollama 모델명(기본 qwen2.5:7b-instruct-q5_K_M)
+--llm-host <URL>                     Ollama 호스트(기본 http://localhost:11434)
+--llm-mode <generate|chat>           API 모드(기본 generate, --chat 별칭 지원)
+--system-prompt-file <FILE>          시스템 프롬프트 파일(기본 QWEN 가이드 파일)
+--no-safe-adult-tags                 모호한 연령 표현 치환 비활성화
+
+--out-dir <DIR>                      출력 베이스(기본 output/scenarios)
+--slug-max-len <N>                   시나리오 폴더 슬러그 최대 길이(기본 80, 해시 접미사)
+--name <TEXT>                        폴더명 슬러그에 쓸 표시 이름
+--debug                              LLM 원본/정규화 출력 디버그
+ 
+성인 전용 옵션
+--adult-only                         시드에 'adult woman' 힌트를 추가하여 성인만 대상으로 강제
+--adult-flag-filenames               생성 파일명을 *_adult.txt 형태로 저장하고 INDEX에 표시
+--adult-reject-minor                 미성년 관련 금칙어 포함 라인 필터링(파일 기록 안 함)
+--adult-banned <TOKENS>              금칙어 추가(반복 가능, 콤마 구분)
+--adult-banned-file <FILE>           금칙어 추가 파일(콤마/개행 구분)
+```
+
+## ComfyUI 파이프라인 연동 가이드
+
+ComfyUI는 한 줄 프롬프트만 강제하지 않습니다. 본 도구가 생성한 태그/시나리오를 멀티라인으로 구성해 사용할 수 있습니다.
+
+핵심 노드(예: SDXL)
+- Checkpoint Loader (SDXL) → 모델/CLIP/VAE
+- CLIP Text Encode (SDXL) → 긍정/부정 프롬프트 인코딩
+- Empty Latent Image → 해상도(예: 1024×1024)
+- KSampler (SDXL) → sampler/steps/cfg/seed
+- VAE Decode → Save Image
+
+기본 사용 순서
+1) Checkpoint Loader (SDXL)로 모델 로드
+2) 긍정 프롬프트: CLIP Text Encode(SDXL)의 text에 `output/positive.txt` 또는 `output/scenarios/<slug>/<컷>.txt` 내용 붙여넣기
+3) 부정 프롬프트: CLIP Text Encode(SDXL) 하나 더 만들어 `output/negative.txt` 입력
+4) Empty Latent Image로 해상도 설정 → KSampler 연결 → VAE Decode → Save Image
+
+컷(시퀀스) 처리 팁(3–10컷)
+- 수동: 컷 파일별로 프롬프트 교체 후 순차 실행
+- 배치: 커뮤니티 노드(ComfyUI-Manager로 ‘text/loop’ 검색)를 이용해 파일→라인 분할→반복 실행 구성
+- 10초 영상 분할: 24fps 기준 총 240프레임 → 5컷이면 컷당 48프레임 목표(AnimateDiff/VideoHelperSuite로 프레임→영상 합치기)
+
+일관성(Continuity) 팁
+- 공통 시드/카메라/렌즈/조명을 컷 전반에 유지
+- IP-Adapter로 스타일 고정, ControlNet(Depth/Lineart/SoftEdge)로 구도 유지
+
+고해상도/리파이너
+- SDXL Refiner(denoise 0.2–0.4), ESRGAN 등 업스케일 노드 병행
+
+NSFW 주의(성인 한정)
+- 번들 `nsfw-soft`/`nsfw-boudoir`는 비노골적 톤에 적합
+- 부정 프롬프트/`--adult-reject-minor`로 안전망 강화, 법/정책 준수
+
+### Qwen-Image 프롬프트 생성 모드 (generate_prompts)
 `--qwen-image`를 사용하면 시드 토큰(`--seed` / `--from-file`)을 바탕으로 Qwen-Image 가이드라인에 맞춘 프롬프트를 생성합니다.
 
 - 스타일 선택(`--qwen-style`):
@@ -326,7 +473,7 @@ python3 scripts/generate_prompts.py \
   --append
 ```
 
-팁
+Tip
 - `--system-prompt` 또는 `--system-prompt-file`로 시스템 규칙을 강화하면 포맷 준수율이 올라갑니다.
 - `--exclude`는 태그형(tags) 출력에 가장 잘 맞습니다. 문장/라벨형은 사후 토큰 제거가 어려우므로 필요 시 시스템 프롬프트로 금지 규칙을 추가하세요.
 
@@ -367,11 +514,74 @@ python3 scripts/generate_prompts.py \
 ```
 
 ## 모델 추천 (Apple M1 64GB 기준)
-- 균형형: `llama3.1:8b-instruct-q5_K_M`, `qwen2.5:7b-instruct-q5_K_M`
-- 고품질(다소 무거움): `qwen2.5:14b-instruct-q4_K_M`
-- 경량/고속: `phi3:3.8b-mini-instruct-q6_K`
 
-> 참고: Qwen3 계열은 Ollama 패키징/프롬프트 템플릿이 아직 제각각이라 한 줄 출력 준수성이 낮을 수 있습니다. 본 도구는 “정확히 1줄” 출력을 기대하므로, 우선 Llama3.1 · Qwen2.5를 권장합니다.
+### LLM (Ollama) – 프롬프트 생성용
+- 균형형: `qwen2.5:7b-instruct-q5_K_M`, `llama3.1:8b-instruct-q5_K_M`
+- 고품질(다소 무거움): `qwen2.5:14b-instruct-q4_K_M`
+- 경량/고속: `phi3:3.8b-mini-instruct-q6_K`, `mistral:7b-instruct`
+
+NSFW 관련 참고
+- 프롬프트 생성 관점에서 NSFW 표현에 대한 억제는 모델별로 상이합니다. 일반적으로 Qwen 2.5 계열이 Llama3.1보다 완곡하며, Mistral 7B Instruct도 상대적으로 관대한 편입니다. 다만 어느 경우든 미성년 관련 내용은 절대 금지하며, 현지 법과 플랫폼 정책을 준수하세요.
+
+### 이미지 모델 (외부 파이프라인 예시)
+- 범용: Stable Diffusion XL 1.0(SDXL), Stable Diffusion 1.5 + 커스텀 체크포인트/LoRA
+- 리얼리즘 계열(예시): Realistic Vision, Deliberate
+- 애니/일러스트 계열(예시): Anything v5, AbyssOrangeMix3
+
+NSFW 관련 참고
+- 위 일부 커스텀 체크포인트는 NSFW 생성에 관대할 수 있습니다. 사용 국가/서비스의 정책을 준수하고, 성인만을 명시적으로 대상으로 하며, 착취적/불법 콘텐츠는 절대 금지하세요. 본 저장소는 시각적 성인/미성년 모호성을 줄이도록 기본적으로 모호한 태그를 성인 표현으로 치환합니다.
+
+> 참고: Qwen3 계열은 Ollama 패키징/프롬프트 템플릿이 제각각이라 한 줄 출력 준수성이 낮을 수 있습니다. 본 도구는 “정확히 1줄” 출력을 기대하므로, 우선 Llama3.1 · Qwen2.5를 권장합니다.
+
+---
+
+## 💻 로컬 실행 가능한 Roleplay / NSFW LLM 목록
+
+| 구분 | 모델명                                               | 파라미터             | 주요 특징                                                |
+| -- | ------------------------------------------------- | ---------------- | ---------------------------------------------------- |
+| 1  | **Blue-Orchid-2x7B**                              | 2×7B (MoE)       | Explicit RP용 MoE 모델 (Dialogue + Storywriting 전문가 분리) |
+| 2  | **Mistral 22B**                                   | 22B              | 검열 적음, 캐릭터 일관성 보통, 큰 VRAM 요구                         |
+| 3  | **L3.1 Euryale 2.2**                              | 70B+             | 고품질 Roleplay, 대형 서버급 VRAM 필요                         |
+| 4  | **Midnight Miqu 103B**                            | 103B             | 몰입감 강함, 64GB 이상 RAM 권장                               |
+| 5  | **Magnum 123B / 70B**                             | 70~123B          | 대형 고품질 NSFW 모델                                       |
+| 6  | **Luminum 123B**                                  | 123B             | Magnum 계열, 창의적 RP에 강함                                |
+| 7  | **Wizard2 8×22B**                                 | 176B (8×22B MoE) | 거대 MoE 구조, 고성능                                       |
+| 8  | **Stheno 3.2**                                    | 13B 정도           | RTX 3070급에서도 구동 가능                                   |
+| 9  | **Gemmasutra**                                    | 약 13B            | 언센서드, 감정 표현 우수                                       |
+| 10 | **Dirty-Muse-Writer-v01-Uncensored-Erotica-NSFW** | 13B              | NSFW 전문 튜닝 모델                                        |
+| 11 | **Llama-3.2-uncensored-erotica / unsloth.F16**    | 8–13B            | Llama 3.2 기반 언센서드 버전                                 |
+| 12 | **Llama-3.1-405B-Instruct (Q4–Q8 quant)**         | 405B (양자화 버전)    | 초대형 오프라인 모델 (LM Studio, Koboldcpp 지원)                |
+| 13 | **NousResearch / Hermes-3-Llama-3.1-405B**        | 405B             | Roleplay 품질 우수, Llama3 기반                            |
+| 14 | **Goliath 120B**                                  | 120B             | 고성능 구형 대형 모델                                         |
+| 15 | **Mistral Small**                                 | 7B               | “may generate offensive material”, 낮은 검열             |
+| 16 | **Euryel / Euryale (구버전)**                        | 30–70B           | Euryale 초기 버전, 일부 QLoRA 양자화 존재                       |
+
+> 안전 메모: NSFW/Roleplay 사용 시 항상 성인을 전제로 하고, 현지 법/플랫폼 정책을 준수하세요. 미성년, 착취, 비동의 콘텐츠는 절대 금지입니다.
+
+---
+
+## ⚙️ 실행 환경 요약
+
+| GPU / RAM                               | 실행 가능한 모델                                                       |
+| --------------------------------------- | --------------------------------------------------------------- |
+| **RTX 3060~3070 (8–12 GB)**             | Stheno 3.2, Mistral 7B Small, Blue-Orchid-2x7B (Q4), Gemmasutra |
+| **RTX 3090 / 4080 / 4090 (24 GB)**      | Mistral 22B (Q4), Dirty-Muse, Llama 3.2 Unsloth F16             |
+| **서버급 (A6000, 3090×2, 64 GB RAM 이상)**   | Euryale 2.2, Midnight Miqu 103B, Magnum 123B                    |
+| **128 GB RAM + CPU inference (no GPU)** | Llama 3.1 405B Q4_K_M via LM Studio or koboldcpp                |
+
+---
+
+## 📦 다운로드 위치 (Hugging Face)
+
+| 모델명                                   | Hugging Face Repo                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Blue-Orchid-2x7B                      | [nakodanei/Blue-Orchid-2x7b](https://huggingface.co/nakodanei/Blue-Orchid-2x7b)                     |
+| Llama-3.1-405B-Instruct               | [meta-llama/Llama-3.1-405B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-405B-Instruct)     |
+| Hermes-3-Llama-3.1-405B               | [NousResearch/Hermes-3-Llama-3.1-405B](https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B) |
+| Dirty-Muse-Writer-v01                 | [Dirty-Muse-Writer-v01-Uncensored-Erotica-NSFW](https://huggingface.co/models) (검색 필요)              |
+| Llama-3.2-uncensored-erotica          | 검색어: `Llama-3.2-uncensored-erotica unsloth`                                                         |
+| Stheno 3.2 / Gemmasutra / Magnum 123B | [huggingface.co/models](https://huggingface.co/models)에서 직접 검색                                      |
+
 
 ## 파일 구조
 ```text
