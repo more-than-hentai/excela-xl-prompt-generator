@@ -1,4 +1,4 @@
-# 프롬프트 모음 생성기 (Python)
+# Prompt Generator (Python)
 
 이 저장소는 이미지 생성 모델용 프롬프트를 정리·확장하기 위한 간단한 Python 도구를 제공합니다. 기본 긍정/부정 프롬프트 파일을 생성하고, 원하면 로컬 LLM(Ollama)을 통해 유사한 긍정 프롬프트를 추가 생성할 수 있습니다.
 
@@ -572,10 +572,7 @@ scripts/
   - `awk '!seen[$0]++' output/positive.txt > output/positive.tmp && mv output/positive.tmp output/positive.txt`
 
 
-## 라이선스
-내부/연구용으로 자유롭게 사용하세요. 별도 라이선스가 필요하다면 알려주세요.
-
-## ComfyUI 테크니컬 가이드
+## ComfyUI Technical Guide
 
 본 도구가 생성한 프롬프트를 ComfyUI로 전달·자동화하는 다양한 실전 방법을 정리했습니다. ComfyUI는 한 줄 강제가 아니므로, 태그 + 시나리오 문장(렌즈/카메라/조명)을 적절히 섞은 멀티라인도 사용할 수 있습니다.
 
@@ -597,7 +594,7 @@ scripts/
 
 —
 
-# 1) ComfyUI HTTP API로 “템플릿 워크플로우” 재전송 (가장 단순/확실)
+### 1) ComfyUI HTTP API로 “템플릿 워크플로우” 재전송 (가장 단순/확실)
 
 ComfyUI의 `/prompt` 큐는 상태를 기억하지 않아서 매 실행마다 그래프(JSON)를 보내는 게 정석입니다. 템플릿 workflow.json을 저장해두고, 그 안의 CLIPTextEncode(양의 프롬프트) 노드의 `text`만 교체해서 POST 하면 됩니다.
 
@@ -609,11 +606,11 @@ ComfyUI의 `/prompt` 큐는 상태를 기억하지 않아서 매 실행마다 �
 ### 1-B. 실행용 JSON 만들고 큐에 넣기 (sed + curl)
 
 ```bash
-# 프롬프트 문자열만 바꿔서 보낼 JSON 생성
+### 프롬프트 문자열만 바꿔서 보낼 JSON 생성
 POS="cinematic portrait, korean actress, soft light, 50mm"
 sed "s|__POS__|${POS//|/\|}|g" workflow.template.json > payload.json
 
-# ComfyUI 프롬프트 큐에 전송 (기본 포트 8188)
+### ComfyUI 프롬프트 큐에 전송 (기본 포트 8188)
 curl -s -X POST http://127.0.0.1:8188/prompt \
   -H 'Content-Type: application/json' \
   -d @payload.json | jq .
@@ -649,7 +646,7 @@ print(r.status_code, r.text[:300])
 
 —
 
-# 2) “파일 로더 노드” + 파일 덮어쓰기 (그래프는 고정, 문자열만 교체)
+### 2) “파일 로더 노드” + 파일 덮어쓰기 (그래프는 고정, 문자열만 교체)
 
 그래프를 매번 안 보내려면 텍스트 파일을 읽는 노드(예: `Load Text From File`)를 CLIPTextEncode 앞에 두고, 실행 전마다 파일만 갱신합니다.
 
@@ -671,7 +668,7 @@ EOF
 
 —
 
-# 3) MCP(Model Context Protocol) 브릿지로 “프롬프트-주입 툴” 만들기 (LLM·에이전트 연결)
+### 3) MCP(Model Context Protocol) 브릿지로 “프롬프트-주입 툴” 만들기 (LLM·에이전트 연결)
 
 MCP 서버(파이썬/노드)에서 “ComfyUI로 이미지 생성” 툴을 노출하고, 내부적으로 템플릿 JSON의 `__POS__` 치환 → `/prompt` POST를 수행합니다. ChatGPT/에디터 MCP 클라이언트에서 도구 호출만으로 ComfyUI 파이프라인을 돌릴 수 있습니다.
 
@@ -744,3 +741,6 @@ MCP 클라이언트(에디터·LLM)가 이 서버를 등록하면, `comfy_genera
 - 네거티브 프롬프트: `__NEG__` 토큰을 네거티브쪽 CLIPTextEncode에 두고 동일 방식으로 교체
 - Client-ID/히스토리: `client_id` 고정 시 `/history/{prompt_id}` 조회·로깅 용이
 - 모델/로라/샘플러/스텝: 템플릿에 `__CKPT__`, `__LORA__`, `__SAMPLER__`, `__STEPS__` 토큰을 추가해 일괄 치환
+
+## 라이선스
+개인/연구용으로 자유롭게 사용하세요.
