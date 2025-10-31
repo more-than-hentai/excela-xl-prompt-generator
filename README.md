@@ -396,38 +396,6 @@ output/scenarios/
 --adult-banned-file <FILE>           금칙어 추가 파일(콤마/개행 구분)
 ```
 
-## ComfyUI 파이프라인 연동 가이드
-
-ComfyUI는 한 줄 프롬프트만 강제하지 않습니다. 본 도구가 생성한 태그/시나리오를 멀티라인으로 구성해 사용할 수 있습니다.
-
-핵심 노드(예: SDXL)
-- Checkpoint Loader (SDXL) → 모델/CLIP/VAE
-- CLIP Text Encode (SDXL) → 긍정/부정 프롬프트 인코딩
-- Empty Latent Image → 해상도(예: 1024×1024)
-- KSampler (SDXL) → sampler/steps/cfg/seed
-- VAE Decode → Save Image
-
-기본 사용 순서
-1) Checkpoint Loader (SDXL)로 모델 로드
-2) 긍정 프롬프트: CLIP Text Encode(SDXL)의 text에 `output/positive.txt` 또는 `output/scenarios/<slug>/<컷>.txt` 내용 붙여넣기
-3) 부정 프롬프트: CLIP Text Encode(SDXL) 하나 더 만들어 `output/negative.txt` 입력
-4) Empty Latent Image로 해상도 설정 → KSampler 연결 → VAE Decode → Save Image
-
-컷(시퀀스) 처리 팁(3–10컷)
-- 수동: 컷 파일별로 프롬프트 교체 후 순차 실행
-- 배치: 커뮤니티 노드(ComfyUI-Manager로 ‘text/loop’ 검색)를 이용해 파일→라인 분할→반복 실행 구성
-- 10초 영상 분할: 24fps 기준 총 240프레임 → 5컷이면 컷당 48프레임 목표(AnimateDiff/VideoHelperSuite로 프레임→영상 합치기)
-
-일관성(Continuity) 팁
-- 공통 시드/카메라/렌즈/조명을 컷 전반에 유지
-- IP-Adapter로 스타일 고정, ControlNet(Depth/Lineart/SoftEdge)로 구도 유지
-
-고해상도/리파이너
-- SDXL Refiner(denoise 0.2–0.4), ESRGAN 등 업스케일 노드 병행
-
-NSFW 주의(성인 한정)
-- 번들 `nsfw-soft`/`nsfw-boudoir`는 비노골적 톤에 적합
-- 부정 프롬프트/`--adult-reject-minor`로 안전망 강화, 법/정책 준수
 
 ### Qwen-Image 프롬프트 생성 모드 (generate_prompts)
 `--qwen-image`를 사용하면 시드 토큰(`--seed` / `--from-file`)을 바탕으로 Qwen-Image 가이드라인에 맞춘 프롬프트를 생성합니다.
@@ -607,3 +575,173 @@ scripts/
 
 ## 라이선스
 내부/연구용으로 자유롭게 사용하세요. 별도 라이선스가 필요하다면 알려주세요.
+
+## ComfyUI 테크니컬 가이드
+
+본 도구가 생성한 프롬프트를 ComfyUI로 전달·자동화하는 다양한 실전 방법을 정리했습니다. ComfyUI는 한 줄 강제가 아니므로, 태그 + 시나리오 문장(렌즈/카메라/조명)을 적절히 섞은 멀티라인도 사용할 수 있습니다.
+
+기본 워크플로 개요(SDXL 예)
+- Checkpoint Loader (SDXL) → 모델/CLIP/VAE 로드
+- CLIP Text Encode (SDXL) ×2 → 긍정/부정 프롬프트 인코딩
+- Empty Latent Image → 해상도 지정(예: 1024×1024)
+- KSampler (SDXL) → sampler/steps/cfg/seed 제어
+- VAE Decode → Save Image
+
+컷(시퀀스) 운용 팁(3–10컷)
+- 수동: 컷 파일별로 프롬프트 교체 후 순차 실행
+- 배치: 커뮤니티 노드(ComfyUI-Manager로 ‘text’/‘loop’ 검색)로 파일→반복 실행 구성
+
+일관성(Continuity)
+- 공통 시드/카메라/렌즈/조명을 컷 전반에 유지
+- IP-Adapter로 스타일 고정, ControlNet(Depth/Lineart/SoftEdge)로 구도 유지
+- SDXL Refiner(denoise 0.2–0.4), ESRGAN 업스케일로 품질 보강
+
+—
+
+# 1) ComfyUI HTTP API로 “템플릿 워크플로우” 재전송 (가장 단순/확실)
+
+ComfyUI의 `/prompt` 큐는 상태를 기억하지 않아서 매 실행마다 그래프(JSON)를 보내는 게 정석입니다. 템플릿 workflow.json을 저장해두고, 그 안의 CLIPTextEncode(양의 프롬프트) 노드의 `text`만 교체해서 POST 하면 됩니다.
+
+### 1-A. 템플릿 준비
+
+- ComfyUI에서 현재 워크플로우 Export → `workflow.template.json` 저장
+- 포지티브 프롬프트 위치(보통 `CLIPTextEncode`의 `inputs.text`)에 토큰 넣기: `"text": "__POS__"`
+
+### 1-B. 실행용 JSON 만들고 큐에 넣기 (sed + curl)
+
+```bash
+# 프롬프트 문자열만 바꿔서 보낼 JSON 생성
+POS="cinematic portrait, korean actress, soft light, 50mm"
+sed "s|__POS__|${POS//|/\|}|g" workflow.template.json > payload.json
+
+# ComfyUI 프롬프트 큐에 전송 (기본 포트 8188)
+curl -s -X POST http://127.0.0.1:8188/prompt \
+  -H 'Content-Type: application/json' \
+  -d @payload.json | jq .
+```
+
+팁: ComfyUI는 `client_id` 사용을 권장합니다. 템플릿 루트에 `"client_id": "innofree-cli"` 같은 필드를 추가하면 트래킹이 편합니다.
+
+### 1-C. Python(단일 스크립트)로 교체·전송
+
+```python
+#!/usr/bin/env python3
+import json, requests
+
+tmpl = json.load(open("workflow.template.json"))
+pos = "cinematic portrait, korean actress, soft light, 50mm"
+
+def replace(obj):
+    if isinstance(obj, dict):
+        for k,v in obj.items():
+            if k == "text" and isinstance(v, str) and v == "__POS__":
+                obj[k] = pos
+            else:
+                replace(v)
+    elif isinstance(obj, list):
+        for i in obj:
+            replace(i)
+
+replace(tmpl)
+tmpl.setdefault("client_id","innofree-cli")
+r = requests.post("http://127.0.0.1:8188/prompt", json=tmpl, timeout=60)
+print(r.status_code, r.text[:300])
+```
+
+—
+
+# 2) “파일 로더 노드” + 파일 덮어쓰기 (그래프는 고정, 문자열만 교체)
+
+그래프를 매번 안 보내려면 텍스트 파일을 읽는 노드(예: `Load Text From File`)를 CLIPTextEncode 앞에 두고, 실행 전마다 파일만 갱신합니다.
+
+흐름
+1. 워크플로우: `Text From File` → `CLIPTextEncode`
+2. 프롬프트 파일 경로: `/data/prompts/positive.txt`
+3. 실행 전 교체:
+
+```bash
+cat > /data/prompts/positive.txt <<'EOF'
+cinematic portrait, korean actress, soft light, 50mm
+EOF
+# ComfyUI UI에서 Run or Queue 트리거 (또는 API로 트리거 노드 호출)
+```
+
+장단점
+- 장점: 대용량 그래프를 매번 안 보내도 됨
+- 단점: 해당 커스텀 노드 설치 필요, 트리거는 별도
+
+—
+
+# 3) MCP(Model Context Protocol) 브릿지로 “프롬프트-주입 툴” 만들기 (LLM·에이전트 연결)
+
+MCP 서버(파이썬/노드)에서 “ComfyUI로 이미지 생성” 툴을 노출하고, 내부적으로 템플릿 JSON의 `__POS__` 치환 → `/prompt` POST를 수행합니다. ChatGPT/에디터 MCP 클라이언트에서 도구 호출만으로 ComfyUI 파이프라인을 돌릴 수 있습니다.
+
+### 3-A. Node(TypeScript) 미니 서버 예시
+
+```ts
+// mcp-comfy.ts
+import { Server } from "@modelcontextprotocol/sdk/server/mcp";
+import axios from "axios";
+import fs from "fs";
+
+const server = new Server({
+  name: "comfyui-bridge",
+  version: "0.1.0",
+  tools: [
+    {
+      name: "comfy_generate",
+      description: "Send a positive prompt to ComfyUI using a workflow template.",
+      inputSchema: {
+        type: "object",
+        properties: { positive: { type: "string" } },
+        required: ["positive"],
+      },
+      handler: async ({ positive }) => {
+        const tmpl = JSON.parse(fs.readFileSync("workflow.template.json","utf8"));
+        const replace = (o:any) => {
+          if (Array.isArray(o)) o.forEach(replace);
+          else if (o && typeof o === "object") {
+            for (const k of Object.keys(o)) {
+              if (k === "text" && o[k] === "__POS__") o[k] = positive;
+              else replace(o[k]);
+            }
+          }
+        };
+        replace(tmpl);
+        tmpl.client_id = tmpl.client_id ?? "innofree-mcp";
+        const { data } = await axios.post("http://127.0.0.1:8188/prompt", tmpl, { timeout: 60000 });
+        return { content: [{ type: "text", text: JSON.stringify(data).slice(0,500) }] };
+      },
+    },
+  ],
+});
+
+server.start();
+```
+
+설치 개요
+
+```bash
+npm i @modelcontextprotocol/sdk axios
+ts-node mcp-comfy.ts # 또는 빌드 후 node 실행
+```
+
+MCP 클라이언트(에디터·LLM)가 이 서버를 등록하면, `comfy_generate` 툴 호출 시 `positive`만 넘겨 ComfyUI를 실행합니다.
+
+### 3-B. Python MCP 서버도 유사하게 가능
+- `modelcontextprotocol` 파이썬 SDK 사용
+- 로직 동일: 템플릿 로드 → `__POS__` 치환 → `/prompt` POST
+
+—
+
+## 어떤 방법을 쓰면 좋을까?
+
+- 가장 간단/안전: 1) 템플릿 JSON 재전송
+- 그래프 고정, 문자열만 바꾸기: 2) 파일 로더 노드
+- LLM/에이전트와 일원화: 3) MCP 브릿지
+
+## 기타
+
+- 네거티브 프롬프트: `__NEG__` 토큰을 네거티브쪽 CLIPTextEncode에 두고 동일 방식으로 교체
+- Client-ID/히스토리: `client_id` 고정 시 `/history/{prompt_id}` 조회·로깅 용이
+- 모델/로라/샘플러/스텝: 템플릿에 `__CKPT__`, `__LORA__`, `__SAMPLER__`, `__STEPS__` 토큰을 추가해 일괄 치환
